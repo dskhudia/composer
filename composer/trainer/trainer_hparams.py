@@ -10,6 +10,7 @@ import dataclasses
 import datetime
 import logging
 import os
+import re
 import warnings
 from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union, cast
 
@@ -447,7 +448,17 @@ class TrainerHparams(hp.Hparams):
         )
 
         # Optimizers
-        optimizers = self.optimizers.initialize_object(model.parameters()) if self.optimizers is not None else None
+        include_lars = []
+        exclude_lars = []
+        for name, param in model.named_parameters():
+            if re.search(r'bn\d+', name) is not None:
+                exclude_lars.append(param)
+            else:
+                include_lars.append(param)
+        param_groups = []
+        param_groups.append({'params': include_lars})
+        param_groups.append({'params': exclude_lars, 'weight_decay': 0.0})
+        optimizers = self.optimizers.initialize_object(param_groups) if self.optimizers is not None else None
 
         load_object_store = None
         if self.load_object_store is not None and self.load_logger_destination is not None:

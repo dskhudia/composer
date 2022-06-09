@@ -10,6 +10,7 @@ from typing import Dict, Iterable, List, Optional, Type, Union
 import torch
 import torch_optimizer
 import yahp as hp
+from timm.optim import Lars
 from torch.optim import Optimizer
 
 from composer.optim import DecoupledAdamW, DecoupledSGDW
@@ -214,6 +215,48 @@ class RMSpropHparams(OptimizerHparams):
     centered: float = hp.auto(torch.optim.RMSprop, "centered", ignore_docstring_errors=True)
 
 
+__all__ = ["LarsHparams"]
+
+
+@dataclass
+class LarsHparams(OptimizerHparams):
+    """Hyperparameters for the LARS/LARC optimizer.
+
+    Uses `timm implementation
+    <https://github.com/rwightman/pytorch-image-models/blob/master/timm/optim/lars.py>`_.
+    Uses `resnet_ref_1632
+    <https://github.com/mlcommons/logging/blob/master/mlperf_logging/rcp_checker/training_2.0.0/rcps_resnet.json>`_
+    defaults for some hparams. It was difficult to find NVIDIA's choices for some hparams
+    (e.g. trust_coeff). If trust_coeff 0.02 doesn't work, try 0.001.
+
+    Args:
+        lr (float, optional): See :class:`~torch.optim.SGD`. Default: 7.4.
+        momentum (float, optional): See :class:`~torch.optim.SGD`. Default: 0.9.
+        weight_decay (float, optional): See :class:`~torch.optim.SGD`. Default: 5.0e-5.
+        dampening (float, optional): See :class:`~torch.optim.SGD`. Default: 0.0
+        nesterov (bool, optional): See :class:`~torch.optim.SGD`. Default: False.
+        trust_coeff (float, optional): trust coefficient for computing adaptive lr /
+            trust_ratio. Default: 0.02.
+        eps (float, optional): eps for division denominator. Default: 1e-8.
+        trust_clip (bool): enable LARC trust ratio clipping. Default: False.
+        always_adapt (bool): always apply LARS LR adapt, otherwise only when group
+            weight_decay != 0. Currently has no effect in Composer. Default: False.
+    """
+    optimizer_cls = Lars
+
+    lr: float = hp.optional(default=7.4, doc="learning rate")
+    momentum: float = hp.optional(default=0.9, doc="momentum factor")
+    weight_decay: float = hp.optional(default=5e-5, doc="weight decay (L2 penalty)")
+    dampening: float = hp.optional(default=0.0, doc="dampening for momentum")
+    nesterov: bool = hp.optional(default=False, doc="Nesterov momentum")
+    trust_coeff: float = hp.optional(default=0.001, doc="trust ratio scaling")
+    eps: float = hp.optional(default=1e-8, doc="divisor for numerical stability")
+    trust_clip: bool = hp.optional(default=False, doc="LARC is LARS with clipping")
+    always_adapt: bool = hp.optional(
+        default=False,
+        doc="Apply LARS LR scaling even on groups w/o weight decay. Currently has no effect in Composer.")
+
+
 optimizer_registry = {
     "adam": AdamHparams,
     "adamw": AdamWHparams,
@@ -222,4 +265,5 @@ optimizer_registry = {
     "sgd": SGDHparams,
     "decoupled_sgdw": DecoupledSGDWHparams,
     "rmsprop": RMSpropHparams,
+    "lars": LarsHparams,
 }

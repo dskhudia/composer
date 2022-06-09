@@ -1,0 +1,67 @@
+model:
+  resnet:
+    model_name: resnet50
+    initializers:
+      - kaiming_normal
+      - bn_ones
+    num_classes: 1000
+algorithms:
+  channels_last:
+  label_smoothing:
+    smoothing: 0.1
+callbacks:
+    #mlperf:
+    #index: 0
+    #benchmark: 'resnet'
+    #target: 0.759
+    #division: 'open'
+  speed_monitor:
+loggers:
+  wandb:
+    log_artifacts: true
+    rank_zero_only: true
+train_dataset:
+  imagenet:
+    resize_size: -1
+    crop_size: 224
+    is_train: true
+    shuffle: true
+    drop_last: true
+    use_ffcv: true
+    ffcv_dest: '/tmp/imagenet_train.ffcv'
+val_dataset:
+  imagenet:
+    resize_size: 256
+    crop_size: 224
+    is_train: false
+    shuffle: false
+    drop_last: false
+    use_ffcv: true
+    ffcv_dest: '/tmp/imagenet_val.ffcv'
+optimizers:
+  lars:
+    lr: 7.4
+    momentum: 0.9
+    weight_decay: 5.0e-5
+    dampening: 0
+    nesterov: false
+    eps: 1.0e-8
+    trust_clip: false
+scale_schedule_ratio: 1.0
+schedulers:
+  - polynomial_with_warmup:
+      t_warmup: "2ep"
+max_duration: 90ep
+train_batch_size: 1632
+eval_batch_size: 2048
+seed: 17
+device:
+  gpu: {}
+dataloader:
+  pin_memory: true
+  timeout: 0
+  prefetch_factor: 2
+  persistent_workers: true
+  num_workers: 8
+grad_accum: 1
+precision: amp
