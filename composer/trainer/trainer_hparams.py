@@ -14,6 +14,7 @@ import warnings
 from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union, cast
 
 import torch
+import torch.fx
 import yahp as hp
 from torchmetrics import Metric, MetricCollection
 
@@ -431,6 +432,8 @@ class TrainerHparams(hp.Hparams):
 
         # The model
         model = self.model.initialize_object()
+
+        model.module = torch.fx.symbolic_trace(model.module)
 
         # Train dataloader
         train_dataloader = _initialize_dataloader(self.train_dataset, self.train_dataloader_label,
