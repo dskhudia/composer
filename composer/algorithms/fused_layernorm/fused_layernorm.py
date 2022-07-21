@@ -17,6 +17,11 @@ try:
 except ImportError as e:
     APEX_INSTALLED = False
 
+import pdb
+
+from transformers.models.bert import modeling_bert
+
+from composer.algorithms.fused_layernorm.fused_layers import BertModel
 from composer.algorithms.warnings import NoEffectWarning
 from composer.core import Algorithm, Event, State
 from composer.loggers import Logger
@@ -39,6 +44,11 @@ def from_LayerNorm(layer: torch.nn.Module, module_index: int) -> APEXFusedLayerN
     return APEXFusedLayerNorm(normalized_shape=layer.normalized_shape, eps=layer.eps)
 
 
+def from_encoder(layer: torch.nn.Module, module_index: int) -> APEXFusedLayerNorm:
+    """Defines a replacement policy from a `torch.nn.LayerNorm` to a `apex.normalization.fused_layer_norm`"""
+    return BertModel(layer.config)
+
+
 def apply_fused_layernorm(model: torch.nn.Module, optimizers: Union[torch.optim.Optimizer,
                                                                     Sequence[torch.optim.Optimizer]]) -> None:
     """Replaces all instances of `torch.nn.LayerNorm` with a `apex.normalization.fused_layer_norm.FusedLayerNorm
@@ -48,8 +58,9 @@ def apply_fused_layernorm(model: torch.nn.Module, optimizers: Union[torch.optim.
     """
     check_if_apex_installed()
 
+    #pdb.set_trace()
     # prepare the replacement policy and perform replacement
-    policy: Dict[Type[torch.nn.Module], module_surgery.ReplacementFunction] = {torch.nn.LayerNorm: from_LayerNorm}
+    policy: Dict[Type[torch.nn.Module], module_surgery.ReplacementFunction] = {modeling_bert.BertModel: from_encoder}
     replaced_instances = module_surgery.replace_module_classes(module=model, optimizers=optimizers, policies=policy)
     if len(replaced_instances) == 0:
         warnings.warn(

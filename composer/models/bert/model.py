@@ -89,6 +89,9 @@ def create_bert_mlm(use_pretrained: Optional[bool] = False,
     else:
         config = transformers.AutoConfig.from_pretrained(pretrained_model_name, **model_config)
         assert transformers.AutoModelForMaskedLM.from_config is not None, 'AutoModelForMaskedLM has from_config method'
+        config.unpad = True
+        config.unpad_flash_attn = True
+        config.return_dict = False
         model = transformers.AutoModelForMaskedLM.from_config(config)
 
     if gradient_checkpointing:

@@ -86,13 +86,19 @@ class HuggingFaceModel(ComposerModel):
         return output
 
     def loss(self, outputs, batch):
-        return outputs['loss']
+        if self.config.use_return_dict:
+            return outputs['loss']
+        else:
+            return outputs[0]
 
     def validate(self, batch):
         if self.use_logits:
             labels = batch.pop('labels')
             output = self.forward(batch)
-            output = output['logits']
+            if self.config.use_return_dict:
+                output = output['logits']
+            else:
+                output = output[0]
 
             # if we are in the single class case, then remove the classes dimension
             if output.shape[1] == 1:
