@@ -149,11 +149,23 @@ def prepare_fsdp_module(model: torch.nn.Module, optimizers: Optional[Union[torch
     """
     if version.parse(torch.__version__) < version.parse('1.13.0'):
         raise RuntimeError('To use FSDP with Composer, you must use torch>=1.13.0.')
+    from torch.distributed._tensor import DeviceMesh
     from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (apply_activation_checkpointing,
                                                                              checkpoint_wrapper)
     from torch.distributed.fsdp import (BackwardPrefetch, CPUOffload, FullyShardedDataParallel, MixedPrecision,
                                         ShardingStrategy)
-    from torch.distributed.fsdp.flatten_params_wrapper import FlattenParamsWrapper
+    from torch.distributed.tensor.parallel import PairwiseParallel, parallelize_module
+    from torch.distributed.tensor.parallel.fsdp import is_available
+
+    node_count = dist.get_world_size() // 8
+    twod_mesh = DeviceMesh(device_type='cuda', mesh=torch.arange(0, dist.get_world_size()).view(node_count, -1))
+    for i, block in enumerate(model.model.transformer.blocks):
+        parallelized_block = parallelize_module(module=block,
+                                                device_mesh=twod_mesh,
+                                                parallelize_plan={'mlp': PairwiseParallel()},
+                                                tp_mesh_dim=1)
+        model.model.transformer.blocks[i] = parallelized_block
+    fsdp_pg = twod_mesh.get_dim_groups()[0]  # this is the fsdp process group
 
     if optimizers:
         optimizers_tuple = ensure_tuple(optimizers)
@@ -251,6 +263,7 @@ def prepare_fsdp_module(model: torch.nn.Module, optimizers: Optional[Union[torch
     limit_all_gathers = fsdp_config.get('limit_all_gathers', False)
     ignored_modules = fsdp_config.get('ignored_modules', None)
 
+    model.model.to(device=f'cuda:{torch.cuda.current_device()}')
     # We choose to not wrap the ComposerModel directly, but instead wrap any submodules like `ComposerModel.model`
     # This makes it safer to call ComposerModel-specific functions like 'eval_forward' that
     # may make calls to sharded submodules. If we only wrap the submodules, then any call that ComposerModel makes
@@ -328,14 +341,14 @@ def prepare_fsdp_module(model: torch.nn.Module, optimizers: Optional[Union[torch
             # If module has attribute `module._fsdp_wrap = ...`, always respect it
             # Otherwise wrap if root object `obj.fsdp_wrap_fn(module)` is true
             # Or if unwrapped params in module in greater than or equal to fsdp_config.min_params
-            def _auto_wrap_policy(module: torch.nn.Module, recurse: bool, unwrapped_params: int) -> bool:
+            def _auto_wrap_policy(module: torch.nn.Module, recurse: bool, nonwrapped_numel: int) -> bool:
                 if recurse:
                     return True
                 else:
                     if hasattr(module, '_fsdp_wrap'):
                         return bool(module._fsdp_wrap)
 
-                    is_large = unwrapped_params >= min_params
+                    is_large = nonwrapped_numel >= min_params
                     if hasattr(obj, 'fsdp_wrap_fn') and isinstance(obj.fsdp_wrap_fn, Callable):
                         return obj.fsdp_wrap_fn(module) or is_large
                     else:
@@ -343,6 +356,7 @@ def prepare_fsdp_module(model: torch.nn.Module, optimizers: Optional[Union[torch
 
             fsdp_obj = FullyShardedDataParallel(
                 obj,
+                process_group=fsdp_pg,
                 sharding_strategy=sharding_strategy,
                 auto_wrap_policy=_auto_wrap_policy,
                 cpu_offload=cpu_offload,
@@ -366,7 +380,7 @@ def prepare_fsdp_module(model: torch.nn.Module, optimizers: Optional[Union[torch
                 # If module has attribute `module._activation_checkpointing = ...`, always respect it
                 # Otherwise checkpoint if root object `obj.activation_checkpointing_fn(module)` is true
                 def _check_fn(module: torch.nn.Module) -> bool:
-                    if isinstance(module, (FullyShardedDataParallel, FlattenParamsWrapper)):
+                    if isinstance(module, FullyShardedDataParallel):
                         return False
                     if hasattr(module, '_activation_checkpointing'):
                         return bool(module._activation_checkpointing)
