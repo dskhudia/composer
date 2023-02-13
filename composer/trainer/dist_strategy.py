@@ -154,18 +154,20 @@ def prepare_fsdp_module(model: torch.nn.Module, optimizers: Optional[Union[torch
                                                                              checkpoint_wrapper)
     from torch.distributed.fsdp import (BackwardPrefetch, CPUOffload, FullyShardedDataParallel, MixedPrecision,
                                         ShardingStrategy)
-    from torch.distributed.tensor.parallel import PairwiseParallel, parallelize_module
-    from torch.distributed.tensor.parallel.fsdp import is_available
+    from torch.distributed.tensor.parallel import PairwiseParallel, PairwiseSequenceParallel, parallelize_module
+    from torch.distributed.tensor.parallel.fsdp import enable_2d_with_fsdp
 
-    node_count = dist.get_world_size() // 8
-    twod_mesh = DeviceMesh(device_type='cuda', mesh=torch.arange(0, dist.get_world_size()).view(node_count, -1))
-    for i, block in enumerate(model.model.transformer.blocks):
-        parallelized_block = parallelize_module(module=block,
-                                                device_mesh=twod_mesh,
-                                                parallelize_plan={'mlp': PairwiseParallel()},
-                                                tp_mesh_dim=1)
-        model.model.transformer.blocks[i] = parallelized_block
-    fsdp_pg = twod_mesh.get_dim_groups()[0]  # this is the fsdp process group
+    fsdp_pg = None
+    if enable_2d_with_fsdp():
+        node_count = dist.get_world_size() // 8
+        twod_mesh = DeviceMesh(device_type='cuda', mesh=torch.arange(0, dist.get_world_size()).view(node_count, -1))
+        for i, block in enumerate(model.model.transformer.blocks):
+            parallelized_block = parallelize_module(module=block,
+                                                    device_mesh=twod_mesh,
+                                                    parallelize_plan={'mlp': PairwiseSequenceParallel()},
+                                                    tp_mesh_dim=1)
+            model.model.transformer.blocks[i] = parallelized_block
+        #fsdp_pg = twod_mesh.get_dim_groups()[0]  # this is the fsdp process group
 
     if optimizers:
         optimizers_tuple = ensure_tuple(optimizers)
