@@ -1178,6 +1178,8 @@ class Trainer:
 
         # Run Event.INIT
         self.engine.run_event(Event.INIT)
+        # move model to bf16
+        self.state.model.to(dtype=torch.bfloat16)
 
         # Log hparams.
         if self.auto_log_hparams:
