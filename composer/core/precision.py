@@ -72,8 +72,9 @@ def get_precision_context(precision: Union[str, Precision]) -> Generator[None, N
             # https://docs.nvidia.com/deeplearning/transformer-engine/user-guide/examples/fp8_primer.html#id1
             fp8_format = Format.HYBRID  # E4M3 during forward pass, E5M2 during backward pass
             fp8_recipe = DelayedScaling(fp8_format=fp8_format, amax_history_len=16, amax_compute_algo='max')
-            with te.fp8_autocast(enabled=True, fp8_recipe=fp8_recipe):
-                yield
+            with torch.cuda.amp.autocast(enabled=True, dtype=torch.bfloat16):
+                with te.fp8_autocast(enabled=True, fp8_recipe=fp8_recipe):
+                    yield
         else:
             if te_installed:
                 raise RuntimeError('AMP_FP8 precision is used but current device does not support it.')
